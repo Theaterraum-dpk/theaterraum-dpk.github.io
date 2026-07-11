@@ -1,213 +1,286 @@
-// 테아터라움 철학하는 몸 — 연극 평론 게시판
-// GitHub Pages 등 정적 호스팅 환경을 고려해 브라우저 localStorage에 저장합니다.
-// (주의: 방문자마다 각자의 브라우저에 저장되므로, 실제로 모든 방문자가
-//  공유하는 게시판이 필요하다면 README.md의 "게시판을 실제로 공유하려면" 항목을 참고하세요.)
+/* =========================================================
+   테아터라움 철학하는 몸 — 평론 게시판 (블로그형)
+   localStorage 기반 데모 게시판 스크립트
+   ========================================================= */
+(function () {
+  "use strict";
 
-(() => {
-  const STORAGE_KEY = 'taru_review_posts_v1';
+  var STORAGE_KEY = "trpb_board_posts_v1";
 
-  const seedPosts = [
-    {
-      id: 'seed-1',
-      title: '침묵 다음의 문장 — 몸은 어떻게 말하는가',
-      workTitle: '『숨은 문장들』',
-      author: '오세연',
-      rating: 5,
-      date: '2026-05-12',
-      content:
-        '무대 위에는 대사보다 침묵이 더 자주 놓여 있었다. 배우들은 문장을 말하는 대신 문장의 무게만큼 몸을 기울였고, 관객은 그 기울기를 해독하는 역할을 떠맡았다.\n\n테아터라움 철학하는 몸의 이번 작업은 언어 이전의 몸짓이 언어보다 더 정확할 수 있다는 것을 증명하려는 실험처럼 보인다. 특히 2막의 정지 장면은 이 극단이 왜 "철학하는 몸"이라는 이름을 택했는지 설명해 준다.'
-    },
-    {
-      id: 'seed-2',
-      title: '해체된 무대, 재조립되는 관객',
-      workTitle: '『의자 없는 방』',
-      author: '김도현',
-      rating: 4,
-      date: '2026-06-03',
-      content:
-        '이 작품은 관객석의 개념 자체를 흔든다. 정해진 좌석 없이 관객이 공간 안을 이동하며 관람하는 방식은 낯설고 불편했지만, 그 불편함이야말로 연출 임형진이 의도한 것이었다.\n\n다만 후반부로 갈수록 구조적 실험이 감정선을 압도하는 지점이 아쉬웠다. 형식이 내용을 완전히 지배하는 순간, 관객은 해석을 포기하고 관찰자로만 남게 된다.'
-    }
-  ];
+  var els = {};
+  var state = {
+    posts: [],
+    activeCategory: "all",
+    searchTerm: "",
+    openPostId: null,
+  };
 
-  const els = {};
-  let posts = [];
-  let activeId = null;
+  // ---------- 유틸 ----------
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function formatDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return y + "." + m + "." + day;
+  }
+
+  function makeExcerpt(content, len) {
+    len = len || 110;
+    var plain = content.replace(/\n+/g, " ").trim();
+    if (plain.length <= len) return plain;
+    return plain.slice(0, len).trim() + "…";
+  }
+
+  function paragraphsHtml(content) {
+    var blocks = content.split(/\n\s*\n/);
+    return blocks
+      .map(function (block) {
+        var safe = escapeHtml(block.trim()).replace(/\n/g, "<br>");
+        return "<p>" + safe + "</p>";
+      })
+      .join("");
+  }
+
+  // ---------- 저장소 ----------
 
   function loadPosts() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        posts = seedPosts.slice();
-        savePosts();
-      } else {
-        posts = JSON.parse(raw);
-      }
+      var raw = window.localStorage.getItem(STORAGE_KEY);
+      state.posts = raw ? JSON.parse(raw) : [];
     } catch (e) {
-      posts = seedPosts.slice();
+      console.error("게시판 데이터를 불러오지 못했습니다.", e);
+      state.posts = [];
     }
   }
 
   function savePosts() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.posts));
+      return true;
     } catch (e) {
-      console.error('저장 공간에 접근할 수 없습니다.', e);
+      console.error("게시판 데이터를 저장하지 못했습니다.", e);
+      return false;
     }
   }
 
-  function stars(n) {
-    const full = '★'.repeat(n);
-    const empty = '☆'.repeat(5 - n);
-    return full + empty;
-  }
+  // ---------- 렌더링 ----------
 
-  function excerpt(text, len = 90) {
-    const clean = text.replace(/\s+/g, ' ').trim();
-    return clean.length > len ? clean.slice(0, len) + '…' : clean;
+  function getFilteredPosts() {
+    var list = state.posts.slice().sort(function (a, b) {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    if (state.activeCategory !== "all") {
+      list = list.filter(function (p) {
+        return p.category === state.activeCategory;
+      });
+    }
+
+    var term = state.searchTerm.trim().toLowerCase();
+    if (term) {
+      list = list.filter(function (p) {
+        return (
+          p.title.toLowerCase().indexOf(term) !== -1 ||
+          p.author.toLowerCase().indexOf(term) !== -1 ||
+          p.content.toLowerCase().indexOf(term) !== -1 ||
+          (p.workTitle || "").toLowerCase().indexOf(term) !== -1
+        );
+      });
+    }
+
+    return list;
   }
 
   function render() {
-    const query = (els.search.value || '').trim().toLowerCase();
-    const filtered = posts
-      .slice()
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .filter(p => {
-        if (!query) return true;
+    var filtered = getFilteredPosts();
+
+    els.postCount.textContent = "총 " + state.posts.length + "편의 글";
+    els.emptyState.style.display = filtered.length ? "none" : "block";
+
+    els.postList.innerHTML = filtered
+      .map(function (p) {
         return (
-          p.title.toLowerCase().includes(query) ||
-          p.workTitle.toLowerCase().includes(query) ||
-          p.author.toLowerCase().includes(query) ||
-          p.content.toLowerCase().includes(query)
+          '<li class="post-item" data-id="' + p.id + '">' +
+          '<span class="category-badge cat-' + p.category + '">' + p.category + "</span>" +
+          '<h3 class="post-title">' + escapeHtml(p.title) + "</h3>" +
+          '<div class="post-meta">' +
+          escapeHtml(p.author) +
+          (p.workTitle ? " · " + escapeHtml(p.workTitle) : "") +
+          " · " +
+          formatDate(p.createdAt) +
+          "</div>" +
+          '<p class="post-excerpt">' + escapeHtml(makeExcerpt(p.content)) + "</p>" +
+          "</li>"
         );
-      });
+      })
+      .join("");
 
-    els.count.textContent = `총 ${filtered.length}편의 평론`;
-
-    if (!filtered.length) {
-      els.list.innerHTML = '';
-      els.empty.style.display = 'block';
-      return;
-    }
-    els.empty.style.display = 'none';
-
-    els.list.innerHTML = filtered.map(p => `
-      <li class="post-item" data-id="${p.id}" tabindex="0" role="button" aria-expanded="${activeId === p.id}">
-        <div class="row1">
-          <h3>${escapeHtml(p.title)}<span class="stars" aria-label="평점 ${p.rating}점">${stars(p.rating)}</span></h3>
-          <span class="meta">${escapeHtml(p.author)} · ${p.date}</span>
-        </div>
-        <p class="excerpt">${escapeHtml(excerpt(p.content))}</p>
-        <span class="tag">${escapeHtml(p.workTitle)}</span>
-      </li>
-    `).join('');
-
-    els.list.querySelectorAll('.post-item').forEach(item => {
-      item.addEventListener('click', () => openPost(item.dataset.id));
-      item.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPost(item.dataset.id); }
+    Array.prototype.forEach.call(els.postList.querySelectorAll(".post-item"), function (li) {
+      li.addEventListener("click", function () {
+        openPost(li.getAttribute("data-id"));
       });
     });
-
-    if (activeId) renderFull();
   }
 
   function openPost(id) {
-    activeId = activeId === id ? null : id;
-    renderFull();
-    render();
-    if (activeId) {
-      els.full.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    var post = state.posts.find(function (p) {
+      return p.id === id;
+    });
+    if (!post) return;
+
+    state.openPostId = id;
+
+    els.postFull.innerHTML =
+      '<button class="post-full-back" id="postFullBack">← 목록으로</button>' +
+      '<span class="category-badge cat-' + post.category + '">' + post.category + "</span>" +
+      '<h2 class="post-full-title">' + escapeHtml(post.title) + "</h2>" +
+      '<div class="post-meta">' +
+      escapeHtml(post.author) +
+      (post.workTitle ? " · " + escapeHtml(post.workTitle) : "") +
+      " · " +
+      formatDate(post.createdAt) +
+      "</div>" +
+      '<div class="post-full-body">' + paragraphsHtml(post.content) + "</div>" +
+      '<div class="post-full-actions">' +
+      '<button id="postDeleteBtn">이 글 삭제</button>' +
+      "</div>";
+
+    els.postFull.classList.add("open");
+    els.postList.style.display = "none";
+
+    document.getElementById("postFullBack").addEventListener("click", closePost);
+    document.getElementById("postDeleteBtn").addEventListener("click", function () {
+      if (window.confirm("이 글을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+        deletePost(post.id);
+      }
+    });
+
+    els.postFull.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function renderFull() {
-    if (!activeId) { els.full.classList.remove('open'); els.full.innerHTML = ''; return; }
-    const p = posts.find(x => x.id === activeId);
-    if (!p) { activeId = null; els.full.classList.remove('open'); return; }
-
-    const isCustom = !p.id.startsWith('seed-');
-
-    els.full.innerHTML = `
-      <button class="close" aria-label="닫기">닫기 ✕</button>
-      <span class="tag">${escapeHtml(p.workTitle)}</span>
-      <h3>${escapeHtml(p.title)}</h3>
-      <div class="meta">${escapeHtml(p.author)} · ${p.date} · <span class="stars">${stars(p.rating)}</span></div>
-      <div class="body-text">${escapeHtml(p.content)}</div>
-      ${isCustom ? '<button class="btn ghost del-btn" data-id="' + p.id + '">이 글 삭제하기</button>' : ''}
-    `;
-    els.full.classList.add('open');
-
-    els.full.querySelector('.close').addEventListener('click', () => openPost(activeId));
-    const delBtn = els.full.querySelector('.del-btn');
-    if (delBtn) delBtn.addEventListener('click', () => deletePost(delBtn.dataset.id));
+  function closePost() {
+    state.openPostId = null;
+    els.postFull.classList.remove("open");
+    els.postFull.innerHTML = "";
+    els.postList.style.display = "";
   }
 
   function deletePost(id) {
-    if (!confirm('이 평론을 삭제할까요? 이 작업은 되돌릴 수 없습니다.')) return;
-    posts = posts.filter(p => p.id !== id);
+    state.posts = state.posts.filter(function (p) {
+      return p.id !== id;
+    });
     savePosts();
-    activeId = null;
+    closePost();
     render();
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  // ---------- 이벤트 ----------
+
+  function handleTabClick(e) {
+    var btn = e.target.closest(".board-tab");
+    if (!btn) return;
+
+    Array.prototype.forEach.call(els.boardTabs.querySelectorAll(".board-tab"), function (b) {
+      b.classList.remove("active");
+    });
+    btn.classList.add("active");
+    state.activeCategory = btn.getAttribute("data-cat");
+    render();
+  }
+
+  function handleSearch(e) {
+    state.searchTerm = e.target.value;
+    render();
   }
 
   function handleSubmit(e) {
     e.preventDefault();
-    const title = els.fTitle.value.trim();
-    const workTitle = els.fWork.value.trim();
-    const author = els.fAuthor.value.trim();
-    const rating = Number(els.fRating.value);
-    const content = els.fContent.value.trim();
 
-    if (!title || !workTitle || !author || !content) {
-      els.formMsg.textContent = '제목, 작품명, 이름, 내용을 모두 입력해 주세요.';
-      els.formMsg.style.color = 'var(--red)';
+    var title = els.fTitle.value.trim();
+    var category = els.fCategory.value;
+    var author = els.fAuthor.value.trim();
+    var workTitle = els.fWork.value.trim();
+    var content = els.fContent.value.trim();
+
+    if (!title || !author || !content) {
+      els.formMsg.textContent = "제목, 이름, 내용은 필수 입력 항목입니다.";
       return;
     }
 
-    const newPost = {
-      id: 'post-' + Date.now(),
-      title, workTitle, author, rating,
-      date: new Date().toISOString().slice(0, 10),
-      content
+    var post = {
+      id: uid(),
+      title: title,
+      category: category,
+      author: author,
+      workTitle: workTitle,
+      content: content,
+      createdAt: new Date().toISOString(),
     };
-    posts.push(newPost);
-    savePosts();
-    els.form.reset();
-    els.fRating.value = '5';
-    els.formMsg.textContent = '평론이 등록되었습니다. (이 브라우저에만 저장됩니다)';
-    els.formMsg.style.color = 'var(--ink-soft)';
-    activeId = newPost.id;
+
+    state.posts.push(post);
+    var ok = savePosts();
+
+    if (!ok) {
+      els.formMsg.textContent = "저장에 실패했습니다. 브라우저 저장 공간을 확인해주세요.";
+      return;
+    }
+
+    els.formMsg.textContent = "글이 등록되었습니다.";
+    e.target.reset();
+    state.activeCategory = "all";
+    Array.prototype.forEach.call(els.boardTabs.querySelectorAll(".board-tab"), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-cat") === "all");
+    });
     render();
+
+    setTimeout(function () {
+      els.formMsg.textContent = "";
+    }, 4000);
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    els.list = document.getElementById('postList');
-    els.full = document.getElementById('postFull');
-    els.empty = document.getElementById('emptyState');
-    els.count = document.getElementById('postCount');
-    els.search = document.getElementById('boardSearch');
-    els.form = document.getElementById('reviewForm');
-    els.fTitle = document.getElementById('fTitle');
-    els.fWork = document.getElementById('fWork');
-    els.fAuthor = document.getElementById('fAuthor');
-    els.fRating = document.getElementById('fRating');
-    els.fContent = document.getElementById('fContent');
-    els.formMsg = document.getElementById('formMsg');
+  // ---------- 초기화 ----------
 
-    if (!els.list) return; // 게시판 페이지가 아니면 종료
+  function init() {
+    els.boardTabs = document.getElementById("boardTabs");
+    els.boardSearch = document.getElementById("boardSearch");
+    els.postCount = document.getElementById("postCount");
+    els.postList = document.getElementById("postList");
+    els.postFull = document.getElementById("postFull");
+    els.emptyState = document.getElementById("emptyState");
+    els.reviewForm = document.getElementById("reviewForm");
+    els.fTitle = document.getElementById("fTitle");
+    els.fCategory = document.getElementById("fCategory");
+    els.fAuthor = document.getElementById("fAuthor");
+    els.fWork = document.getElementById("fWork");
+    els.fContent = document.getElementById("fContent");
+    els.formMsg = document.getElementById("formMsg");
 
     loadPosts();
     render();
 
-    els.search.addEventListener('input', render);
-    els.form.addEventListener('submit', handleSubmit);
-  });
+    els.boardTabs.addEventListener("click", handleTabClick);
+    els.boardSearch.addEventListener("input", handleSearch);
+    els.reviewForm.addEventListener("submit", handleSubmit);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
