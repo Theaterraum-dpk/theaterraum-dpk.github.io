@@ -4,8 +4,104 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>평론 게시판 — 테아터라움 철학하는 몸</title>
-<meta name="description" content="테아터라움 철학하는 몸 공연에 대한 관객 평론과 감상을 남기는 게시판.">
+<meta name="description" content="테아터라움 철학하는 몸의 공연분석, 이론, 기사, 인터뷰를 모아두는 게시판.">
 <link rel="stylesheet" href="css/style.css">
+<style>
+  /* ===== 블로그형 게시판 추가 스타일 (필요하면 css/style.css로 옮겨도 됩니다) ===== */
+  .board-tabs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:.5rem;
+    margin-bottom:1.5rem;
+  }
+  .board-tab{
+    font-family:var(--f-mono, monospace);
+    font-size:.78rem;
+    padding:.45rem 1rem;
+    border:1px solid var(--ink-soft, #999);
+    border-radius:999px;
+    background:transparent;
+    cursor:pointer;
+    opacity:.7;
+  }
+  .board-tab.active{
+    opacity:1;
+    background:var(--ink, #111);
+    color:var(--bg, #fff);
+    border-color:var(--ink, #111);
+  }
+  .category-badge{
+    display:inline-block;
+    font-family:var(--f-mono, monospace);
+    font-size:.7rem;
+    letter-spacing:.02em;
+    padding:.2rem .6rem;
+    border-radius:999px;
+    border:1px solid currentColor;
+    margin-bottom:.5rem;
+  }
+  .cat-공연분석{ color:#2f5d50; }
+  .cat-이론{ color:#4a3f8a; }
+  .cat-기사{ color:#8a5a2f; }
+  .cat-인터뷰{ color:#8a2f5a; }
+  .cat-공지{ color:#b03030; }
+
+  .post-item{
+    padding:1.5rem 0;
+    border-bottom:1px solid rgba(0,0,0,.1);
+    cursor:pointer;
+  }
+  .post-item:hover .post-title{ text-decoration:underline; }
+  .post-title{
+    font-size:1.3rem;
+    margin:.2rem 0 .5rem;
+  }
+  .post-meta{
+    font-family:var(--f-mono, monospace);
+    font-size:.75rem;
+    color:var(--ink-soft, #777);
+    margin-bottom:.6rem;
+  }
+  .post-excerpt{
+    color:var(--ink-soft, #555);
+    line-height:1.6;
+  }
+
+  .post-full{
+    display:none;
+    padding:2rem 0;
+    border-bottom:1px solid rgba(0,0,0,.15);
+    margin-bottom:2rem;
+  }
+  .post-full.open{ display:block; }
+  .post-full-back{
+    background:none;
+    border:none;
+    font-family:var(--f-mono, monospace);
+    font-size:.8rem;
+    cursor:pointer;
+    margin-bottom:1.5rem;
+    opacity:.7;
+  }
+  .post-full-back:hover{ opacity:1; }
+  .post-full-title{ font-size:2rem; margin:.5rem 0 1rem; }
+  .post-full-body p{ margin:0 0 1.1rem; line-height:1.8; }
+  .post-full-actions{
+    margin-top:2rem;
+    display:flex;
+    gap:.8rem;
+  }
+  .post-full-actions button{
+    font-family:var(--f-mono, monospace);
+    font-size:.75rem;
+    padding:.4rem .9rem;
+    border:1px solid var(--ink-soft, #999);
+    background:transparent;
+    cursor:pointer;
+    border-radius:4px;
+  }
+  .post-full-actions button:hover{ opacity:.7; }
+</style>
 </head>
 <body>
 
@@ -36,8 +132,7 @@
       <span class="eyebrow">Critique Board</span>
       <h1 class="hero-title" style="font-size:var(--text-h1);">평론 게시판</h1>
       <p class="hero-manifesto" style="margin-top:1rem;max-width:60ch;">
-        테아터라움 철학하는 몸의 공연을 보고 남긴 평론과 감상을 모아두는 공간입니다.
-        하나의 무대는 관객의 수만큼 다시 쓰입니다.
+        테아터라움 철학하는 몸과 관련된 공연분석, 이론, 기사, 인터뷰를 모아두는 공간입니다.
       </p>
     </div>
   </section>
@@ -55,31 +150,46 @@
         </p>
       </div>
 
+      <div class="board-tabs" id="boardTabs">
+        <button class="board-tab active" data-cat="all">전체</button>
+        <button class="board-tab" data-cat="공연분석">공연분석</button>
+        <button class="board-tab" data-cat="이론">이론</button>
+        <button class="board-tab" data-cat="기사">기사</button>
+        <button class="board-tab" data-cat="인터뷰">인터뷰</button>
+        <button class="board-tab" data-cat="공지">공지</button>
+      </div>
+
       <div class="board-toolbar">
-        <span class="board-count" id="postCount">총 0편의 평론</span>
+        <span class="board-count" id="postCount">총 0편의 글</span>
         <div class="board-search field" style="margin-bottom:0;">
-          <input type="search" id="boardSearch" placeholder="제목, 작품명, 작성자로 검색">
+          <input type="search" id="boardSearch" placeholder="제목, 작성자, 내용으로 검색">
         </div>
       </div>
 
       <div id="postFull" class="post-full" aria-live="polite"></div>
 
       <ul class="post-list" id="postList"></ul>
-      <div class="empty-state" id="emptyState" style="display:none;">검색 결과가 없습니다.</div>
+      <div class="empty-state" id="emptyState" style="display:none;">글이 없습니다.</div>
 
       <div class="write-panel">
         <div class="section-head">
-          <div><span class="eyebrow">Write</span><h2>평론 남기기</h2></div>
+          <div><span class="eyebrow">Write</span><h2>글 작성하기</h2></div>
         </div>
         <form id="reviewForm" novalidate>
           <div class="field-row">
             <div class="field">
-              <label for="fTitle">평론 제목</label>
-              <input type="text" id="fTitle" name="title" maxlength="60" required>
+              <label for="fTitle">제목</label>
+              <input type="text" id="fTitle" name="title" maxlength="80" required>
             </div>
             <div class="field">
-              <label for="fWork">관람한 작품</label>
-              <input type="text" id="fWork" name="workTitle" placeholder="예: 『의자 없는 방』" maxlength="40" required>
+              <label for="fCategory">카테고리</label>
+              <select id="fCategory" name="category">
+                <option value="공연분석">공연분석</option>
+                <option value="이론">이론</option>
+                <option value="기사">기사</option>
+                <option value="인터뷰">인터뷰</option>
+                <option value="공지">공지</option>
+              </select>
             </div>
           </div>
           <div class="field-row">
@@ -88,21 +198,15 @@
               <input type="text" id="fAuthor" name="author" maxlength="20" required>
             </div>
             <div class="field">
-              <label for="fRating">평점</label>
-              <select id="fRating" name="rating">
-                <option value="5">★★★★★ (5)</option>
-                <option value="4">★★★★☆ (4)</option>
-                <option value="3">★★★☆☆ (3)</option>
-                <option value="2">★★☆☆☆ (2)</option>
-                <option value="1">★☆☆☆☆ (1)</option>
-              </select>
+              <label for="fWork">관련 작품 (선택)</label>
+              <input type="text" id="fWork" name="workTitle" placeholder="예: 『의자 없는 방』" maxlength="40">
             </div>
           </div>
           <div class="field">
             <label for="fContent">내용</label>
-            <textarea id="fContent" name="content" required placeholder="공연에 대한 평론이나 감상을 자유롭게 남겨 주세요."></textarea>
+            <textarea id="fContent" name="content" required placeholder="공연분석, 이론, 기사, 인터뷰 등 자유롭게 작성해 주세요. 문단을 나누려면 줄바꿈을 두 번 해주세요." style="min-height:220px;"></textarea>
           </div>
-          <button type="submit" class="btn">평론 등록하기</button>
+          <button type="submit" class="btn">글 등록하기</button>
           <p id="formMsg" style="margin-top:1rem;font-family:var(--f-mono);font-size:.8rem;color:var(--ink-soft);"></p>
         </form>
       </div>
@@ -116,7 +220,7 @@
   <div class="wrap">
     <div class="foot-block">
       <h4>테아터라움 철학하는 몸</h4>
-      <p>서울시 강북구 덕릉로 8. 3층 (수유동) / 우편번호 01097</p>
+      <p>서울시 마포구 (연습실 주소를 입력하세요)</p>
       <p>연출 · 임형진</p>
     </div>
     <div class="foot-block">
